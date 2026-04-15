@@ -1,0 +1,23 @@
+{
+  "name": "case-database-audit-tool",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "声学案例数据库审核工具",
+  "main": "scripts/1_generate_audit_checklist.mjs",
+  "scripts": {
+    "generate": "node scripts/1_generate_audit_checklist.mjs",
+    "apply": "node scripts/2_apply_audit_changes.mjs",
+    "html": "node scripts/3_generate_html_review.mjs",
+    "integrate": "node scripts/4_batch_integrate.mjs"
+  },
+  "keywords": [
+    "audit",
+    "case-database",
+    "acoustics"
+  ],
+  "author": "Cameron Huang",
+  "license": "MIT",
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
