@@ -1,5 +1,5 @@
 // scripts/5_interactive_editor.mjs
-// 功能：交互式审核编辑器 - 直接编辑源文件内容
+// 功能：交互式审核编辑器 - 直接编辑源文件内容（修复版）
 
 import fs from "fs";
 import path from "path";
@@ -17,7 +17,7 @@ function parseArgs() {
 ❌ 错误：审核清单文件不存在
 
 使用方法：
-  node scripts/5_interactive_editor.mjs <审核清单CSV> [输出HTML路径]
+  node scripts/5_interactive_editor.mjs <审核清单CSV>
 
 示例：
   node scripts/5_interactive_editor.mjs "D:\\AI\\project\\0415\\00_audit_checklist.csv"
@@ -26,6 +26,20 @@ function parseArgs() {
   }
   
   return { auditPath, outputPath };
+}
+
+function escapeJsonString(str) {
+  /**
+   * 安全地转义JSON字符串
+   */
+  if (typeof str !== 'string') str = String(str || '');
+  
+  return str
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')
+    .replace(/\t/g, '\\t');
 }
 
 function generateInteractiveEditor(auditPath, outputPath) {
@@ -40,59 +54,33 @@ function generateInteractiveEditor(auditPath, outputPath) {
   console.log(`✅ 成功读取 ${auditRows.length} 个项目`);
   console.log(`🎨 生成交互式编辑器...`);
   
-  // 读取每个项目的源文件
-  const projectsWithContent = [];
-  
-  for (let i = 0; i < auditRows.length; i++) {
-    const row = auditRows[i];
-    const projectData = {
-      index: i,
-      序号: row.序号,
-      项目名称: row.项目名称,
-      分册类型: row.分册类型,
-      子类: row.子类,
-      源项目路径: row.源项目路径,
-      
-      // 问题
-      问题_原文: row.问题_自动提取 || "",
-      问题_置信度: row.问题_置信度 || 0,
-      问题_修改建议: row.问题_修改建议 || "",
-      问题_最终确认: row.问题_最终确认 || "",
-      
-      // 难点
-      难点_原文: row.难点_自动提取 || "",
-      难点_置信度: row.难点_置信度 || 0,
-      难点_修改建议: row.难点_修改建议 || "",
-      难点_最终确认: row.难点_最终确认 || "",
-      
-      // 方案
-      方案_原文: row.方案_自动提取 || "",
-      方案_置信度: row.方案_置信度 || 0,
-      方案_修改建议: row.方案_修改建议 || "",
-      方案_最终确认: row.方案_最终确认 || "",
-      
-      // 结果
-      结果_原文: row.结果_自动提取 || "",
-      结果_置信度: row.结果_置信度 || 0,
-      结果_修改建议: row.结果_修改建议 || "",
-      结果_最终确认: row.结果_最终确认 || "",
-      
-      // 图片
-      图片_前期: row.图片_检测到的前期 || "未检测",
-      图片_前期_替换: row.图片_前期_替换建议 || "",
-      图片_后期: row.图片_检测到的后期 || "未检测",
-      图片_后期_替换: row.图片_后期_替换建议 || "",
-      
-      // 汇总
-      整体状态: row.整体状态 || "",
-      备注: row.备注 || "",
-    };
+  // 准备项目数据
+  const projects = auditRows.map((row, idx) => ({
+    index: idx,
+    序号: row.序号 || idx + 1,
+    项目名称: row.项目名称 || "",
+    分册类型: row.分册类型 || "",
+    子类: row.子类 || "",
+    源项目路径: row.源项目路径 || "",
     
-    projectsWithContent.push(projectData);
-  }
+    问题_原文: row.问题_自动提取 || "",
+    问题_置信度: row.问题_置信度 || 0,
+    
+    难点_原文: row.难点_自动提取 || "",
+    难点_置信度: row.难点_置信度 || 0,
+    
+    方案_原文: row.方案_自动提取 || "",
+    方案_置信度: row.方案_置信度 || 0,
+    
+    结果_原文: row.结果_自动提取 || "",
+    结果_置信度: row.结果_置信度 || 0,
+    
+    图片_前期: row.图片_检测到的前期 || "未检测",
+    图片_后期: row.图片_检测到的后期 || "未检测",
+  }));
   
   // 生成HTML
-  const html = generateHtmlContent(projectsWithContent, auditPath);
+  const html = generateHtmlContent(projects);
   
   ensureDir(path.dirname(outputPath));
   fs.writeFileSync(outputPath, html, "utf8");
@@ -105,12 +93,11 @@ function generateInteractiveEditor(auditPath, outputPath) {
 📊 项目统计：${auditRows.length} 个
 
 🌍 打开方式：
-   用浏览器打开: ${outputPath}
+   用浏览器打开该HTML文件
 
 💡 功能：
    - 查看项目原文本内容
    - 直接编辑替换为新内容
-   - 可选：导航回源文件目录
    - 支持批量编辑
    - 实时预览替换效果
    - 自动保存进度到浏览器
@@ -118,8 +105,32 @@ function generateInteractiveEditor(auditPath, outputPath) {
   `);
 }
 
-function generateHtmlContent(projects, auditPath) {
-  const projectsJson = JSON.stringify(projects);
+function generateHtmlContent(projects) {
+  // 将项目数据安全地转换为JavaScript代码
+  let projectsJs = "const projects = [\n";
+  
+  for (const p of projects) {
+    projectsJs += `  {
+    index: ${p.index},
+    序号: "${escapeJsonString(p.序号)}",
+    项目名称: "${escapeJsonString(p.项目名称)}",
+    分册类型: "${escapeJsonString(p.分册类型)}",
+    子类: "${escapeJsonString(p.子类)}",
+    源项目路径: "${escapeJsonString(p.源项目路径)}",
+    问题_原文: "${escapeJsonString(p.问题_原文)}",
+    问题_置信度: ${p.问题_置信度},
+    难点_原文: "${escapeJsonString(p.难点_原文)}",
+    难点_置信度: ${p.难点_置信度},
+    方案_原文: "${escapeJsonString(p.方案_原文)}",
+    方案_置信度: ${p.方案_置信度},
+    结果_原文: "${escapeJsonString(p.结果_原文)}",
+    结果_置信度: ${p.结果_置信度},
+    图片_前期: "${escapeJsonString(p.图片_前期)}",
+    图片_后期: "${escapeJsonString(p.图片_后期)}",
+  },\n`;
+  }
+  
+  projectsJs += "];\n";
   
   return `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -182,7 +193,7 @@ function generateHtmlContent(projects, auditPath) {
     
     .editor-wrapper {
       display: flex;
-      min-height: calc(100vh - 200px);
+      min-height: 600px;
     }
     
     .sidebar {
@@ -191,6 +202,7 @@ function generateHtmlContent(projects, auditPath) {
       border-right: 1px solid #ddd;
       overflow-y: auto;
       padding: 20px;
+      max-height: 600px;
     }
     
     .project-item {
@@ -202,8 +214,6 @@ function generateHtmlContent(projects, auditPath) {
       border-left: 3px solid #ddd;
       transition: all 0.3s;
       font-size: 13px;
-      max-height: 60px;
-      overflow: hidden;
     }
     
     .project-item:hover {
@@ -226,16 +236,20 @@ function generateHtmlContent(projects, auditPath) {
     .project-item .name {
       font-weight: 500;
       margin-top: 4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     
     .main-content {
       flex: 1;
-      padding: 40px;
+      padding: 30px;
       overflow-y: auto;
+      max-height: 600px;
     }
     
     .editor-section {
-      margin-bottom: 40px;
+      margin-bottom: 30px;
       padding: 20px;
       background: #f8f9fa;
       border-radius: 8px;
@@ -258,6 +272,7 @@ function generateHtmlContent(projects, auditPath) {
       border-radius: 3px;
       font-size: 12px;
       color: #666;
+      margin-left: auto;
     }
     
     .original-text {
@@ -268,6 +283,9 @@ function generateHtmlContent(projects, auditPath) {
       border: 1px solid #ddd;
       line-height: 1.6;
       color: #333;
+      max-height: 150px;
+      overflow-y: auto;
+      word-break: break-word;
     }
     
     .original-text .label {
@@ -277,21 +295,10 @@ function generateHtmlContent(projects, auditPath) {
       font-weight: 600;
     }
     
-    .original-text .content {
-      color: #555;
-      word-break: break-word;
-    }
-    
-    .editor-group {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 20px;
-      margin-bottom: 15px;
-    }
-    
     .form-group {
       display: flex;
       flex-direction: column;
+      margin-bottom: 15px;
     }
     
     .form-label {
@@ -299,9 +306,6 @@ function generateHtmlContent(projects, auditPath) {
       font-weight: 600;
       color: #333;
       margin-bottom: 8px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
     }
     
     .form-input {
@@ -327,12 +331,13 @@ function generateHtmlContent(projects, auditPath) {
       cursor: pointer;
     }
     
-    .action-buttons {
+    .bottom-controls {
       display: flex;
       gap: 10px;
-      margin-top: 15px;
-      padding-top: 15px;
+      padding: 20px 30px;
+      background: #f8f9fa;
       border-top: 1px solid #ddd;
+      flex-wrap: wrap;
     }
     
     .btn {
@@ -363,55 +368,9 @@ function generateHtmlContent(projects, auditPath) {
       background: #dee2e6;
     }
     
-    .btn-open {
-      background: #51cf66;
-      color: white;
-      font-size: 12px;
-      padding: 6px 12px;
-    }
-    
-    .btn-open:hover {
-      background: #40c057;
-    }
-    
-    .image-section {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 20px;
-      margin-bottom: 40px;
-    }
-    
-    .image-item {
-      background: white;
-      padding: 15px;
-      border-radius: 6px;
-      border: 1px solid #ddd;
-    }
-    
-    .image-item h4 {
-      font-size: 13px;
-      color: #333;
-      margin-bottom: 10px;
-      font-weight: 600;
-    }
-    
-    .image-placeholder {
-      background: #f0f0f0;
-      padding: 20px;
-      border-radius: 4px;
-      text-align: center;
-      color: #999;
-      font-size: 12px;
-      margin-bottom: 10px;
-    }
-    
-    .bottom-controls {
-      display: flex;
-      gap: 10px;
-      padding: 20px 40px;
-      background: #f8f9fa;
-      border-top: 1px solid #ddd;
-      flex-wrap: wrap;
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
     }
     
     .nav-buttons {
@@ -430,44 +389,36 @@ function generateHtmlContent(projects, auditPath) {
       color: #1971c2;
     }
     
-    .empty-state {
-      text-align: center;
-      padding: 60px 40px;
-      color: #999;
+    .image-section {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 15px;
+      margin-bottom: 20px;
     }
     
-    .empty-state h2 {
-      font-size: 24px;
+    .image-item {
+      background: white;
+      padding: 15px;
+      border-radius: 6px;
+      border: 1px solid #ddd;
+    }
+    
+    .image-item h4 {
+      font-size: 13px;
+      color: #333;
       margin-bottom: 10px;
-      color: #666;
+      font-weight: 600;
     }
     
-    @media (max-width: 1000px) {
-      .editor-wrapper {
-        flex-direction: column;
-      }
-      
-      .sidebar {
-        width: 100%;
-        max-height: 200px;
-        border-right: none;
-        border-bottom: 1px solid #ddd;
-        display: flex;
-        overflow-x: auto;
-      }
-      
-      .project-item {
-        flex-shrink: 0;
-        min-width: 150px;
-      }
-      
-      .editor-group {
-        grid-template-columns: 1fr;
-      }
-      
-      .image-section {
-        grid-template-columns: 1fr;
-      }
+    .image-placeholder {
+      background: #f0f0f0;
+      padding: 12px;
+      border-radius: 4px;
+      text-align: center;
+      color: #999;
+      font-size: 12px;
+      margin-bottom: 10px;
+      word-break: break-all;
     }
   </style>
 </head>
@@ -485,21 +436,21 @@ function generateHtmlContent(projects, auditPath) {
     
     <!-- 编辑区域 -->
     <div class="editor-wrapper">
-      <!-- 侧边栏：项目列表 -->
+      <!-- 侧边栏 -->
       <div class="sidebar">
-        <div style="font-weight: 600; color: #333; margin-bottom: 15px;">
-          📋 项目列表 (<span id="totalCount">0</span>)
+        <div style="font-weight: 600; color: #333; margin-bottom: 15px; font-size: 14px;">
+          📋 项目列表
         </div>
         <div id="projectList"></div>
       </div>
       
-      <!-- 主内容区 -->
+      <!-- 主内容 -->
       <div class="main-content">
         <div id="editorContent"></div>
       </div>
     </div>
     
-    <!-- 底部控制 -->
+    <!-- 底部 -->
     <div class="bottom-controls">
       <button class="btn btn-primary" onclick="saveAndExport()">
         📥 导出审核结果为CSV
@@ -519,15 +470,14 @@ function generateHtmlContent(projects, auditPath) {
   </div>
   
   <script>
-    // 数据
-    const projects = ${projectsJson};
-    const auditPath = "${path.dirname(auditPath).replace(/\\\\/g, '\\\\\\\\')}";
+    ${projectsJs}
     
     let currentIndex = 0;
     let editedData = {};
     
     // 初始化
-    document.addEventListener('DOMContentLoaded', () => {
+    document.addEventListener('DOMContentLoaded', function() {
+      console.log('页面已加载，项目数:', projects.length);
       loadSavedProgress();
       renderProjectList();
       showProject(0);
@@ -536,17 +486,20 @@ function generateHtmlContent(projects, auditPath) {
     // 渲染项目列表
     function renderProjectList() {
       const list = document.getElementById('projectList');
-      list.innerHTML = projects.map((p, idx) => \`
-        <div class="project-item \${idx === 0 ? 'active' : ''}" onclick="showProject(\${idx})">
-          <div class="number">#\${p.序号}</div>
-          <div class="name">\${p.项目名称}</div>
-        </div>
-      \`).join('');
+      let html = '';
       
-      document.getElementById('totalCount').textContent = projects.length;
+      for (let i = 0; i < projects.length; i++) {
+        const p = projects[i];
+        html += '<div class="project-item ' + (i === 0 ? 'active' : '') + '" onclick="showProject(' + i + ')">';
+        html += '<div class="number">#' + p.序号 + '</div>';
+        html += '<div class="name">' + p.项目名称 + '</div>';
+        html += '</div>';
+      }
+      
+      list.innerHTML = html;
     }
     
-    // 显示项目编辑界面
+    // 显示项目
     function showProject(index) {
       if (index < 0 || index >= projects.length) return;
       
@@ -556,171 +509,103 @@ function generateHtmlContent(projects, auditPath) {
       const project = projects[index];
       const saved = editedData[index] || {};
       
-      let html = \`
-        <div class="info-box">
-          ℹ️ 正在编辑：<strong>\${project.项目名称}</strong> | 
-          进度：<strong>\${index + 1}/${projects.length}</strong> | 
-          分册：\${project.分册类型}
-        </div>
-      \`;
+      let html = '<div class="info-box">';
+      html += 'ℹ️ 正在编辑：<strong>' + project.项目名称 + '</strong> | ';
+      html += '进度：<strong>' + (index + 1) + '/' + projects.length + '</strong>';
+      html += '</div>';
       
-      // 问题部分
-      html += \`
-        <div class="editor-section">
-          <h3>
-            ❓ 发现问题
-            <span class="confidence-badge">置信度: \${project.问题_置信度}%</span>
-          </h3>
-          
-          <div class="original-text">
-            <div class="label">原文本：</div>
-            <div class="content">\${escapeHtml(project.问题_原文)}</div>
-          </div>
-          
-          <div class="editor-group">
-            <div class="form-group">
-              <label class="form-label">审核结果</label>
-              <select class="form-input" id="问题_审核结果">
-                <option value="">-- 选择 --</option>
-                <option value="对" \${saved['问题_审核结果'] === '对' ? 'selected' : ''}>✅ 对</option>
-                <option value="不对" \${saved['问题_审核结果'] === '不对' ? 'selected' : ''}>❌ 不对</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label class="form-label">最终确认</label>
-              <select class="form-input" id="问题_最终确认">
-                <option value="">-- 选择 --</option>
-                <option value="确认" \${saved['问题_最终确认'] === '确认' ? 'selected' : ''}>✓ 确认</option>
-                <option value="已修改" \${saved['问题_最终确认'] === '已修改' ? 'selected' : ''}>✎ 已修改</option>
-              </select>
-            </div>
-          </div>
-          
-          <div class="form-group">
-            <label class="form-label">修改为新内容（留空则保留原文）</label>
-            <textarea class="form-input" id="问题_新内容" placeholder="输入修改后的内容...">\${saved['问题_新内容'] || ''}</textarea>
-          </div>
-        </div>
-      \`;
+      // 问题
+      html += '<div class="editor-section">';
+      html += '<h3>❓ 发现问题 <span class="confidence-badge">置信度: ' + project.问题_置信度 + '%</span></h3>';
+      html += '<div class="original-text">';
+      html += '<div class="label">原文本：</div>';
+      html += '<div>' + (project.问题_原文 || '（无）') + '</div>';
+      html += '</div>';
+      html += '<div class="form-group">';
+      html += '<label class="form-label">修改为新内容</label>';
+      html += '<textarea class="form-input" id="问题_新内容">' + (saved['问题_新内容'] || '') + '</textarea>';
+      html += '</div>';
+      html += '</div>';
       
-      // 难点部分
-      html += \`
-        <div class="editor-section">
-          <h3>
-            🎯 项目难点
-            <span class="confidence-badge">置信度: \${project.难点_置信度}%</span>
-          </h3>
-          
-          <div class="original-text">
-            <div class="label">原文本：</div>
-            <div class="content">\${escapeHtml(project.难点_原文)}</div>
-          </div>
-          
-          <div class="form-group">
-            <label class="form-label">修改为新内容（留空则保留原文）</label>
-            <textarea class="form-input" id="难点_新内容" placeholder="输入修改后的内容...">\${saved['难点_新内容'] || ''}</textarea>
-          </div>
-        </div>
-      \`;
+      // 难点
+      html += '<div class="editor-section">';
+      html += '<h3>🎯 项目难点 <span class="confidence-badge">置信度: ' + project.难点_置信度 + '%</span></h3>';
+      html += '<div class="original-text">';
+      html += '<div class="label">原文本：</div>';
+      html += '<div>' + (project.难点_原文 || '（无）') + '</div>';
+      html += '</div>';
+      html += '<div class="form-group">';
+      html += '<label class="form-label">修改为新内容</label>';
+      html += '<textarea class="form-input" id="难点_新内容">' + (saved['难点_新内容'] || '') + '</textarea>';
+      html += '</div>';
+      html += '</div>';
       
-      // 方案部分
-      html += \`
-        <div class="editor-section">
-          <h3>
-            💡 解决方案
-            <span class="confidence-badge">置信度: \${project.方案_置信度}%</span>
-          </h3>
-          
-          <div class="original-text">
-            <div class="label">原文本：</div>
-            <div class="content">\${escapeHtml(project.方案_原文)}</div>
-          </div>
-          
-          <div class="form-group">
-            <label class="form-label">修改为新内容（留空则保留原文）</label>
-            <textarea class="form-input" id="方案_新内容" placeholder="输入修改后的内容...">\${saved['方案_新内容'] || ''}</textarea>
-          </div>
-        </div>
-      \`;
+      // 方案
+      html += '<div class="editor-section">';
+      html += '<h3>💡 解决方案 <span class="confidence-badge">置信度: ' + project.方案_置信度 + '%</span></h3>';
+      html += '<div class="original-text">';
+      html += '<div class="label">原文本：</div>';
+      html += '<div>' + (project.方案_原文 || '（无）') + '</div>';
+      html += '</div>';
+      html += '<div class="form-group">';
+      html += '<label class="form-label">修改为新内容</label>';
+      html += '<textarea class="form-input" id="方案_新内容">' + (saved['方案_新内容'] || '') + '</textarea>';
+      html += '</div>';
+      html += '</div>';
       
-      // 结果部分
-      html += \`
-        <div class="editor-section">
-          <h3>
-            🏆 结果与价值
-            <span class="confidence-badge">置信度: \${project.结果_置信度}%</span>
-          </h3>
-          
-          <div class="original-text">
-            <div class="label">原文本：</div>
-            <div class="content">\${escapeHtml(project.结果_原文)}</div>
-          </div>
-          
-          <div class="form-group">
-            <label class="form-label">修改为新内容（留空则保留原文）</label>
-            <textarea class="form-input" id="结果_新内容" placeholder="输入修改后的内容...">\${saved['结果_新内容'] || ''}</textarea>
-          </div>
-        </div>
-      \`;
+      // 结果
+      html += '<div class="editor-section">';
+      html += '<h3>🏆 结果与价值 <span class="confidence-badge">置信度: ' + project.结果_置信度 + '%</span></h3>';
+      html += '<div class="original-text">';
+      html += '<div class="label">原文本：</div>';
+      html += '<div>' + (project.结果_原文 || '（无）') + '</div>';
+      html += '</div>';
+      html += '<div class="form-group">';
+      html += '<label class="form-label">修改为新内容</label>';
+      html += '<textarea class="form-input" id="结果_新内容">' + (saved['结果_新内容'] || '') + '</textarea>';
+      html += '</div>';
+      html += '</div>';
       
-      // 图片部分
-      html += \`
-        <div class="image-section">
-          <div class="image-item">
-            <h4>📷 前期图片</h4>
-            <div class="image-placeholder">
-              原图片：\${project.图片_前期}
-            </div>
-            <div class="form-group">
-              <label class="form-label">替换为新图片文件名</label>
-              <input type="text" class="form-input" id="图片_前期_新" 
-                placeholder="输入新图片文件名，或留空保留原图" 
-                value="\${saved['图片_前期_新'] || ''}">
-            </div>
-          </div>
-          
-          <div class="image-item">
-            <h4>📷 后期图片</h4>
-            <div class="image-placeholder">
-              原图片：\${project.图片_后期}
-            </div>
-            <div class="form-group">
-              <label class="form-label">替换为新图片文件名</label>
-              <input type="text" class="form-input" id="图片_后期_新" 
-                placeholder="输入新图片文件名，或留空保留原图" 
-                value="\${saved['图片_后期_新'] || ''}">
-            </div>
-          </div>
-        </div>
-      \`;
+      // 图片
+      html += '<div class="editor-section">';
+      html += '<h3>📷 图片内容</h3>';
+      html += '<div class="image-section">';
+      html += '<div class="image-item">';
+      html += '<h4>前期图片</h4>';
+      html += '<div class="image-placeholder">原文件：' + project.图片_前期 + '</div>';
+      html += '<div class="form-group">';
+      html += '<label class="form-label">替换为新图片文件名</label>';
+      html += '<input type="text" class="form-input" id="图片_前期_新" placeholder="或留空保留原图" value="' + (saved['图片_前期_新'] || '') + '">';
+      html += '</div>';
+      html += '</div>';
+      html += '<div class="image-item">';
+      html += '<h4>后期图片</h4>';
+      html += '<div class="image-placeholder">原文件：' + project.图片_后期 + '</div>';
+      html += '<div class="form-group">';
+      html += '<label class="form-label">替换为新图片文件名</label>';
+      html += '<input type="text" class="form-input" id="图片_后期_新" placeholder="或留空保留原图" value="' + (saved['图片_后期_新'] || '') + '">';
+      html += '</div>';
+      html += '</div>';
+      html += '</div>';
+      html += '</div>';
       
-      // 汇总部分
-      html += \`
-        <div class="editor-section">
-          <h3>✅ 审核汇总</h3>
-          
-          <div class="editor-group">
-            <div class="form-group">
-              <label class="form-label">整体状态</label>
-              <select class="form-input" id="整体状态">
-                <option value="">-- 选择 --</option>
-                <option value="通过" \${saved['整体状态'] === '通过' ? 'selected' : ''}>✅ 通过</option>
-                <option value="需修改" \${saved['整体状态'] === '需修改' ? 'selected' : ''}>🔧 需修改</option>
-                <option value="待补充" \${saved['整体状态'] === '待补充' ? 'selected' : ''}>📦 待补充</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label class="form-label">源文件路径</label>
-              <input type="text" class="form-input" value="\${project.源项目路径}" readonly>
-            </div>
-          </div>
-          
-          <div class="form-group">
-            <label class="form-label">备注</label>
-            <textarea class="form-input" id="备注" placeholder="添加任何其他说明...">\${saved['备注'] || ''}</textarea>
-          </div>
-        </div>
-      \`;
+      // 汇总
+      html += '<div class="editor-section">';
+      html += '<h3>✅ 审核汇总</h3>';
+      html += '<div class="form-group">';
+      html += '<label class="form-label">整体状态</label>';
+      html += '<select class="form-input" id="整体状态">';
+      html += '<option value="">-- 选择 --</option>';
+      html += '<option value="通过" ' + (saved['整体状态'] === '通过' ? 'selected' : '') + '>✅ 通过</option>';
+      html += '<option value="需修改" ' + (saved['整体状态'] === '需修改' ? 'selected' : '') + '>🔧 需修改</option>';
+      html += '<option value="待补充" ' + (saved['整体状态'] === '待补充' ? 'selected' : '') + '>📦 待补充</option>';
+      html += '</select>';
+      html += '</div>';
+      html += '<div class="form-group">';
+      html += '<label class="form-label">备注</label>';
+      html += '<textarea class="form-input" id="备注" style="min-height: 60px;">' + (saved['备注'] || '') + '</textarea>';
+      html += '</div>';
+      html += '</div>';
       
       document.getElementById('editorContent').innerHTML = html;
       
@@ -730,15 +615,13 @@ function generateHtmlContent(projects, auditPath) {
       updateNavButtons();
     }
     
-    // 保存当���项目编辑内容
+    // 保存当前项目
     function saveCurrentProject() {
       if (currentIndex < 0 || currentIndex >= projects.length) return;
       
       const fields = [
-        '问题_审核结果', '问题_最终确认', '问题_新内容',
-        '难点_新内容', '方案_新内容', '结果_新内容',
-        '图片_前期_新', '图片_后期_新',
-        '整体状态', '备注'
+        '问题_新内容', '难点_新内容', '方案_新内容', '结果_新内容',
+        '图片_前期_新', '图片_后期_新', '整体状态', '备注'
       ];
       
       const saved = {};
@@ -750,17 +633,16 @@ function generateHtmlContent(projects, auditPath) {
       }
       
       editedData[currentIndex] = saved;
-      saveDraft();
     }
     
-    // 下一个项目
+    // 下一个
     function nextProject() {
       if (currentIndex < projects.length - 1) {
         showProject(currentIndex + 1);
       }
     }
     
-    // 上一个项目
+    // 上一个
     function previousProject() {
       if (currentIndex > 0) {
         showProject(currentIndex - 1);
@@ -769,8 +651,9 @@ function generateHtmlContent(projects, auditPath) {
     
     // 更新项目列表高亮
     function updateProjectList() {
-      document.querySelectorAll('.project-item').forEach((item, idx) => {
-        item.classList.toggle('active', idx === currentIndex);
+      const items = document.querySelectorAll('.project-item');
+      items.forEach((item, i) => {
+        item.classList.toggle('active', i === currentIndex);
       });
     }
     
@@ -787,112 +670,88 @@ function generateHtmlContent(projects, auditPath) {
       document.getElementById('nextBtn').disabled = currentIndex === projects.length - 1;
     }
     
-    // 保存进度到浏览器本地存储
+    // 保存进度
     function saveDraft() {
       saveCurrentProject();
       localStorage.setItem('auditEditorDraft', JSON.stringify(editedData));
-      console.log('✅ 进度已保存到浏览器');
+      alert('✅ 进度已保存到浏览器！');
     }
     
-    // 加载之前保存的进度
+    // 加载进度
     function loadSavedProgress() {
-      const saved = localStorage.getItem('auditEditorDraft');
-      if (saved) {
-        editedData = JSON.parse(saved);
-        console.log('✅ 加载了之前的进度');
+      try {
+        const saved = localStorage.getItem('auditEditorDraft');
+        if (saved) {
+          editedData = JSON.parse(saved);
+          console.log('✅ 已加载 ' + Object.keys(editedData).length + ' 个已编辑项目');
+        }
+      } catch (e) {
+        console.error('加载进度失败:', e);
       }
     }
     
-    // 导出审核结果为CSV
+    // 导出CSV
     function saveAndExport() {
       saveCurrentProject();
       
-      const rows = [];
+      const fieldnames = [
+        '序号', '项目名称', '分册类型', '子类',
+        '问题_原文', '问题_新内容',
+        '难点_原文', '难点_新内容',
+        '方案_原文', '方案_新内容',
+        '结果_原文', '结果_新内容',
+        '图片_前期_原', '图片_前期_新',
+        '图片_后期_原', '图片_后期_新',
+        '整体状态', '备注'
+      ];
+      
+      let csv = '\\ufeff' + fieldnames.join(',') + '\\r\\n';
       
       for (let i = 0; i < projects.length; i++) {
         const project = projects[i];
         const saved = editedData[i] || {};
         
-        rows.push({
-          序号: project.序号,
-          项目名称: project.项目名称,
-          分册类型: project.分册类型,
-          子类: project.子类,
-          源项目路径: project.源项目路径,
-          
-          // 原文本
-          问题_原文: project.问题_原文,
-          难点_原文: project.难点_原文,
-          方案_原文: project.方案_原文,
-          结果_原文: project.结果_原文,
-          
-          // 新内容
-          问题_新内容: saved['问题_新内容'] || '',
-          难点_新内容: saved['难点_新内容'] || '',
-          方案_新内容: saved['方案_新内容'] || '',
-          结果_新内容: saved['结果_新内容'] || '',
-          
-          // 图片
-          图片_前期_原: project.图片_前期,
-          图片_前期_新: saved['图片_前期_新'] || '',
-          图片_后期_原: project.图片_后期,
-          图片_后期_新: saved['图片_后期_新'] || '',
-          
-          // 审核意见
-          问题_审核结果: saved['问题_审核结果'] || '',
-          问题_最终确认: saved['问题_最终确认'] || '',
-          整体状态: saved['整体状态'] || '',
-          备注: saved['备注'] || '',
-        });
+        const row = [
+          project.序号,
+          project.项目名称,
+          project.分册类型,
+          project.子类,
+          project.问题_原文,
+          saved['问题_新内容'] || '',
+          project.难点_原文,
+          saved['难点_新内容'] || '',
+          project.方案_原文,
+          saved['方案_新内容'] || '',
+          project.结果_原文,
+          saved['结果_新内容'] || '',
+          project.图片_前期,
+          saved['图片_前期_新'] || '',
+          project.图片_后期,
+          saved['图片_后期_新'] || '',
+          saved['整体状态'] || '',
+          saved['备注'] || '',
+        ];
+        
+        csv += row.map(cell => {
+          const text = String(cell || '');
+          if (/[",\\r\\n]/.test(text)) {
+            return '"' + text.replace(/"/g, '""') + '"';
+          }
+          return text;
+        }).join(',') + '\\r\\n';
       }
       
-      // 导出CSV
-      const fieldnames = [
-        '序号', '项目名称', '分册类型', '子类', '源项目路径',
-        '问题_原文', '难点_原文', '方案_原文', '结果_原文',
-        '问题_新���容', '难点_新内容', '方案_新内容', '结果_新内容',
-        '图片_前期_原', '图片_前期_新', '图片_后期_原', '图片_后期_新',
-        '问题_审核结果', '问题_最终确认', '整体状态', '备注'
-      ];
-      
-      const escapeCell = (value) => {
-        const text = value == null ? "" : String(value);
-        if (/[",\\r\\n]/.test(text)) {
-          return \`"\${text.replaceAll('"', '""')}"\`;
-        }
-        return text;
-      };
-      
-      const lines = [fieldnames.map(escapeCell).join(",")];
-      
-      for (const row of rows) {
-        lines.push(fieldnames.map(name => escapeCell(row[name] ?? "")).join(","));
-      }
-      
-      const csv = "\\ufeff" + lines.join("\\r\\n") + "\\r\\n";
-      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-      const link = document.createElement("a");
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
       const url = URL.createObjectURL(blob);
-      link.setAttribute("href", url);
-      link.setAttribute("download", "audit_editor_result.csv");
-      link.style.visibility = "hidden";
+      link.setAttribute('href', url);
+      link.setAttribute('download', 'audit_editor_result.csv');
+      link.style.visibility = 'hidden';
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       
-      alert('✅ 审���结果已导出！\\n文件名：audit_editor_result.csv\\n\\n下一步：运行 node scripts/2_apply_audit_changes.mjs');
-    }
-    
-    // HTML转义
-    function escapeHtml(text) {
-      const map = {
-        '&': '&amp;',
-        '<': '&lt;',
-        '>': '&gt;',
-        '"': '&quot;',
-        "'": '&#039;'
-      };
-      return text.replace(/[&<>"']/g, m => map[m]);
+      alert('✅ 审核结果已导出！\\n文件名：audit_editor_result.csv');
     }
   </script>
 </body>
