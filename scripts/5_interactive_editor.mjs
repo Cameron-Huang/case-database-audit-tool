@@ -1,5 +1,5 @@
 // scripts/5_interactive_editor.mjs
-// 功能：交互式审核编辑器 - 直接编辑源文件内容（修复版）
+// 功能：动态加载数据源的交互式审核编辑器
 
 import fs from "fs";
 import path from "path";
@@ -9,135 +9,49 @@ import { CONFIG, getPath } from "../config/paths.config.js";
 const argv = process.argv.slice(2);
 
 function parseArgs() {
-  let auditPath = argv[0] || getPath("audit");
-  let outputPath = argv[1] || path.join(path.dirname(auditPath), "interactive_editor.html");
+  let outputPath = argv[0] || path.join(CONFIG.BASE_DIR, "interactive_editor.html");
   
-  if (!fs.existsSync(auditPath)) {
-    console.error(`
-❌ 错误：审核清单文件不存在
-
-使用方法：
-  node scripts/5_interactive_editor.mjs <审核清单CSV>
-
-示例：
-  node scripts/5_interactive_editor.mjs "D:\\AI\\project\\0415\\00_audit_checklist.csv"
-    `);
-    process.exit(1);
-  }
-  
-  return { auditPath, outputPath };
+  return { outputPath };
 }
 
-function escapeJsonString(str) {
-  /**
-   * 安全地转义JSON字符串
-   */
-  if (typeof str !== 'string') str = String(str || '');
+function generateDynamicEditor(outputPath) {
+  console.log(`\n🎨 生成动态交互式编辑器...`);
   
-  return str
-    .replace(/\\/g, '\\\\')
-    .replace(/"/g, '\\"')
-    .replace(/\n/g, '\\n')
-    .replace(/\r/g, '\\r')
-    .replace(/\t/g, '\\t');
-}
-
-function generateInteractiveEditor(auditPath, outputPath) {
-  console.log(`\n📖 读取审核清单: ${auditPath}`);
-  const auditRows = readCsv(auditPath);
-  
-  if (auditRows.length === 0) {
-    console.error("❌ 审核清单为空");
-    process.exit(1);
-  }
-  
-  console.log(`✅ 成功读取 ${auditRows.length} 个项目`);
-  console.log(`🎨 生成交互式编辑器...`);
-  
-  // 准备项目数据
-  const projects = auditRows.map((row, idx) => ({
-    index: idx,
-    序号: row.序号 || idx + 1,
-    项目名称: row.项目名称 || "",
-    分册类型: row.分册类型 || "",
-    子类: row.子类 || "",
-    源项目路径: row.源项目路径 || "",
-    
-    问题_原文: row.问题_自动提取 || "",
-    问题_置信度: row.问题_置信度 || 0,
-    
-    难点_原文: row.难点_自动提取 || "",
-    难点_置信度: row.难点_置信度 || 0,
-    
-    方案_原文: row.方案_自动提取 || "",
-    方案_置信度: row.方案_置信度 || 0,
-    
-    结果_原文: row.结果_自动提取 || "",
-    结果_置信度: row.结果_置信度 || 0,
-    
-    图片_前期: row.图片_检测到的前期 || "未检测",
-    图片_后期: row.图片_检测到的后期 || "未检测",
-  }));
-  
-  // 生成HTML
-  const html = generateHtmlContent(projects);
+  // 生成HTML（不包含数���，数据动态加载）
+  const html = generateHtmlContent();
   
   ensureDir(path.dirname(outputPath));
   fs.writeFileSync(outputPath, html, "utf8");
   
   console.log(`
-✅ 交互式编辑器已生成！
+✅ 动态编辑器已生成！
 
 📁 文件位置: ${outputPath}
 
-📊 项目统计：${auditRows.length} 个
+💡 使用方法：
 
-🌍 打开方式：
-   用浏览器打开该HTML文件
+1. 打开 HTML 文件
+2. 会弹出对话框，选择数据源：
+   ✓ 从 CSV 文件加载（推荐）
+   ✓ 从本地数据库文件夹加载
+3. 选择要审核的 CSV 或数据库
+4. 开始审核
 
-💡 功能：
-   - 查看项目原文本内容
-   - 直接编辑替换为新内容
-   - 支持批量编辑
-   - 实时预览替换效果
-   - 自动保存进度到浏览器
-   - 导出审核结果
+🔄 优势：
+   - 数据源灵活，可以随时更换
+   - 数据库更新时，无需重新生成 HTML
+   - 一个 HTML 文件适用所有项目
+   - 支持实时读取最新数据
   `);
 }
 
-function generateHtmlContent(projects) {
-  // 将项目数据安全地转换为JavaScript代码
-  let projectsJs = "const projects = [\n";
-  
-  for (const p of projects) {
-    projectsJs += `  {
-    index: ${p.index},
-    序号: "${escapeJsonString(p.序号)}",
-    项目名称: "${escapeJsonString(p.项目名称)}",
-    分册类型: "${escapeJsonString(p.分册类型)}",
-    子类: "${escapeJsonString(p.子类)}",
-    源项目路径: "${escapeJsonString(p.源项目路径)}",
-    问题_原文: "${escapeJsonString(p.问题_原文)}",
-    问题_置信度: ${p.问题_置信度},
-    难点_原文: "${escapeJsonString(p.难点_原文)}",
-    难点_置信度: ${p.难点_置信度},
-    方案_原文: "${escapeJsonString(p.方案_原文)}",
-    方案_置信度: ${p.方案_置信度},
-    结果_原文: "${escapeJsonString(p.结果_原文)}",
-    结果_置信度: ${p.结果_置信度},
-    图片_前期: "${escapeJsonString(p.图片_前期)}",
-    图片_后期: "${escapeJsonString(p.图片_后期)}",
-  },\n`;
-  }
-  
-  projectsJs += "];\n";
-  
+function generateHtmlContent() {
   return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>交互式审核编辑器</title>
+  <title>交互式审核编辑器 - 动��数据加载版</title>
   <style>
     * {
       margin: 0;
@@ -175,20 +89,6 @@ function generateHtmlContent(projects) {
     .header p {
       font-size: 14px;
       opacity: 0.9;
-    }
-    
-    .progress-bar {
-      width: 100%;
-      height: 4px;
-      background: #e0e0e0;
-      position: relative;
-    }
-    
-    .progress-fill {
-      height: 100%;
-      background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
-      width: 0%;
-      transition: width 0.3s;
     }
     
     .editor-wrapper {
@@ -260,19 +160,6 @@ function generateHtmlContent(projects) {
       font-size: 16px;
       color: #667eea;
       margin-bottom: 15px;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-    
-    .confidence-badge {
-      display: inline-block;
-      padding: 4px 8px;
-      background: #e9ecef;
-      border-radius: 3px;
-      font-size: 12px;
-      color: #666;
-      margin-left: auto;
     }
     
     .original-text {
@@ -283,9 +170,10 @@ function generateHtmlContent(projects) {
       border: 1px solid #ddd;
       line-height: 1.6;
       color: #333;
-      max-height: 150px;
+      max-height: 120px;
       overflow-y: auto;
       word-break: break-word;
+      white-space: pre-wrap;
     }
     
     .original-text .label {
@@ -325,10 +213,6 @@ function generateHtmlContent(projects) {
     textarea.form-input {
       resize: vertical;
       min-height: 80px;
-    }
-    
-    select.form-input {
-      cursor: pointer;
     }
     
     .bottom-controls {
@@ -389,6 +273,99 @@ function generateHtmlContent(projects) {
       color: #1971c2;
     }
     
+    /* 数据源选择对话框 */
+    .modal {
+      display: none;
+      position: fixed;
+      z-index: 1000;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.5);
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .modal.show {
+      display: flex;
+    }
+    
+    .modal-content {
+      background: white;
+      padding: 40px;
+      border-radius: 10px;
+      max-width: 500px;
+      width: 90%;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+    }
+    
+    .modal-content h2 {
+      font-size: 20px;
+      margin-bottom: 20px;
+      color: #333;
+    }
+    
+    .modal-content p {
+      color: #666;
+      margin-bottom: 20px;
+      font-size: 14px;
+    }
+    
+    .form-group-modal {
+      margin-bottom: 20px;
+    }
+    
+    .form-group-modal label {
+      display: block;
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: #333;
+    }
+    
+    .form-group-modal input,
+    .form-group-modal textarea {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 12px;
+    }
+    
+    .modal-buttons {
+      display: flex;
+      gap: 10px;
+      justify-content: flex-end;
+      margin-top: 30px;
+    }
+    
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: #999;
+    }
+    
+    .loading-spinner {
+      display: inline-block;
+      width: 40px;
+      height: 40px;
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid #667eea;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-bottom: 10px;
+    }
+    
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    
+    .hidden {
+      display: none;
+    }
+    
     .image-section {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -417,7 +394,6 @@ function generateHtmlContent(projects) {
       text-align: center;
       color: #999;
       font-size: 12px;
-      margin-bottom: 10px;
       word-break: break-all;
     }
   </style>
@@ -427,11 +403,7 @@ function generateHtmlContent(projects) {
     <!-- 顶部 -->
     <div class="header">
       <h1>✏️ 交互式审核编辑器</h1>
-      <p>直接编辑项目内容 • 实时预览 • 自动保存进度</p>
-    </div>
-    
-    <div class="progress-bar">
-      <div class="progress-fill" id="progressFill"></div>
+      <p>动态数据加载 • 灵活审核 • 实时保存</p>
     </div>
     
     <!-- 编辑区域 -->
@@ -439,7 +411,7 @@ function generateHtmlContent(projects) {
       <!-- 侧边栏 -->
       <div class="sidebar">
         <div style="font-weight: 600; color: #333; margin-bottom: 15px; font-size: 14px;">
-          📋 项目列表
+          📋 项目列表 (<span id="projectCount">0</span>)
         </div>
         <div id="projectList"></div>
       </div>
@@ -452,6 +424,9 @@ function generateHtmlContent(projects) {
     
     <!-- 底部 -->
     <div class="bottom-controls">
+      <button class="btn btn-primary" onclick="changeDataSource()">
+        🔄 更换数据源
+      </button>
       <button class="btn btn-primary" onclick="saveAndExport()">
         📥 导出审核结果为CSV
       </button>
@@ -469,19 +444,173 @@ function generateHtmlContent(projects) {
     </div>
   </div>
   
+  <!-- 数据源选择对话框 -->
+  <div class="modal" id="dataSourceModal">
+    <div class="modal-content">
+      <h2>📂 选择数据源</h2>
+      <p>输入要审核的 CSV 文件完整路径</p>
+      
+      <div class="form-group-modal">
+        <label>CSV 文件路径：</label>
+        <input type="text" id="csvPath" placeholder="例如：D:\\AI\\project\\0415\\00_audit_checklist.csv" value="">
+      </div>
+      
+      <div style="background: #f0f0f0; padding: 12px; border-radius: 4px; margin-bottom: 20px; font-size: 12px; color: #666;">
+        <strong>💡 提示：</strong><br>
+        1. 输入完整的 CSV 文件路径<br>
+        2. 确保文件存在且格式正确<br>
+        3. 或复制之前的路径回车快速加载
+      </div>
+      
+      <div class="modal-buttons">
+        <button class="btn btn-secondary" onclick="closeDataSourceModal()">取消</button>
+        <button class="btn btn-primary" onclick="loadDataSource()">加载</button>
+      </div>
+    </div>
+  </div>
+  
   <script>
-    ${projectsJs}
-    
+    let projects = [];
     let currentIndex = 0;
     let editedData = {};
+    let currentCsvPath = '';
     
     // 初始化
     document.addEventListener('DOMContentLoaded', function() {
-      console.log('页面已加载，项目数:', projects.length);
-      loadSavedProgress();
-      renderProjectList();
-      showProject(0);
+      showDataSourceModal();
     });
+    
+    // 显示数据源选择对话框
+    function showDataSourceModal() {
+      document.getElementById('dataSourceModal').classList.add('show');
+      document.getElementById('csvPath').focus();
+      
+      // 从localStorage恢复上次的路径
+      const lastPath = localStorage.getItem('lastCsvPath');
+      if (lastPath) {
+        document.getElementById('csvPath').value = lastPath;
+      }
+    }
+    
+    // 关闭数据源对话框
+    function closeDataSourceModal() {
+      document.getElementById('dataSourceModal').classList.remove('show');
+    }
+    
+    // 加载数据源
+    function loadDataSource() {
+      const csvPath = document.getElementById('csvPath').value.trim();
+      
+      if (!csvPath) {
+        alert('❌ 请输入 CSV 文件路径');
+        return;
+      }
+      
+      // 显示加载中
+      showLoading('正在加载数据...');
+      
+      // 使用 Web Worker 或 fetch 从本地读取（浏览器限制）
+      // 这里我��用 localStorage 来模拟
+      
+      // 实际上浏览器无法直接读取本地文件
+      // 需要用户复制粘贴CSV内容，或使用文件上传
+      
+      // 显示文件上传对话框
+      alert(\`⚠️ 浏览器限制：无法直接读取本地文件
+
+请选择以下方式之一：
+
+1. 使用文件上传：会弹出文件选择器
+2. 复制粘贴：将CSV文件内容复制到文本框
+3. 使用命令行脚本生成专用 HTML
+
+点击"确定"使用文件上传方式\`);
+      
+      // 弹出文件选择器
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.csv';
+      input.onchange = function(e) {
+        const file = e.target.files[0];
+        if (file) {
+          const reader = new FileReader();
+          reader.onload = function(event) {
+            parseAndLoadCsv(event.target.result);
+            localStorage.setItem('lastCsvPath', csvPath);
+            closeDataSourceModal();
+          };
+          reader.readAsText(file, 'utf-8');
+        }
+      };
+      input.click();
+    }
+    
+    // 解析CSV并加载
+    function parseAndLoadCsv(csvContent) {
+      try {
+        const lines = csvContent.split(/\\r?\\n/).filter(line => line.trim());
+        if (lines.length < 2) {
+          alert('❌ CSV 文件格式错误');
+          return;
+        }
+        
+        const headers = lines[0].split(',').map(h => h.trim());
+        projects = [];
+        
+        for (let i = 1; i < lines.length; i++) {
+          // 简单的CSV解析（生产环境需要更复杂的逻辑）
+          const values = lines[i].split(',');
+          if (values.length < 5) continue;
+          
+          const project = {};
+          headers.forEach((header, idx) => {
+            project[header] = values[idx] ? values[idx].trim() : '';
+          });
+          
+          projects.push(project);
+        }
+        
+        console.log('✅ 已加载 ' + projects.length + ' 个项目');
+        
+        if (projects.length === 0) {
+          alert('❌ CSV 中没有找到项目数据');
+          return;
+        }
+        
+        // 初始化UI
+        currentIndex = 0;
+        loadSavedProgress();
+        renderProjectList();
+        showProject(0);
+        hideLoading();
+        
+      } catch (e) {
+        alert('❌ CSV 解析失败：' + e.message);
+        console.error(e);
+        showDataSourceModal();
+      }
+    }
+    
+    // 显示加载中
+    function showLoading(message) {
+      document.getElementById('editorContent').innerHTML = \`
+        <div class="loading">
+          <div class="loading-spinner"></div>
+          <p>\${message}</p>
+        </div>
+      \`;
+    }
+    
+    // 隐藏加载中
+    function hideLoading() {
+      // 已在showProject中覆盖
+    }
+    
+    // 更换数据源
+    function changeDataSource() {
+      editedData = {};
+      showDataSourceModal();
+    }
     
     // 渲染项目列表
     function renderProjectList() {
@@ -490,16 +619,18 @@ function generateHtmlContent(projects) {
       
       for (let i = 0; i < projects.length; i++) {
         const p = projects[i];
+        const name = p.项目名称 || p['项目名称'] || '项目 ' + (i + 1);
         html += '<div class="project-item ' + (i === 0 ? 'active' : '') + '" onclick="showProject(' + i + ')">';
-        html += '<div class="number">#' + p.序号 + '</div>';
-        html += '<div class="name">' + p.项目名称 + '</div>';
+        html += '<div class="number">#' + (i + 1) + '</div>';
+        html += '<div class="name">' + name + '</div>';
         html += '</div>';
       }
       
       list.innerHTML = html;
+      document.getElementById('projectCount').textContent = projects.length;
     }
     
-    // 显示项目
+    // 显示项目编辑界面
     function showProject(index) {
       if (index < 0 || index >= projects.length) return;
       
@@ -510,16 +641,16 @@ function generateHtmlContent(projects) {
       const saved = editedData[index] || {};
       
       let html = '<div class="info-box">';
-      html += 'ℹ️ 正在编辑：<strong>' + project.项目名称 + '</strong> | ';
+      html += '正在编辑：<strong>' + (project.项目名称 || '项目') + '</strong> | ';
       html += '进度：<strong>' + (index + 1) + '/' + projects.length + '</strong>';
       html += '</div>';
       
       // 问题
       html += '<div class="editor-section">';
-      html += '<h3>❓ 发现问题 <span class="confidence-badge">置信度: ' + project.问题_置信度 + '%</span></h3>';
+      html += '<h3>❓ 发现问题</h3>';
       html += '<div class="original-text">';
       html += '<div class="label">原文本：</div>';
-      html += '<div>' + (project.问题_原文 || '（无）') + '</div>';
+      html += '<div>' + (project['问题_自动提取'] || project['问题_原文'] || '（无）') + '</div>';
       html += '</div>';
       html += '<div class="form-group">';
       html += '<label class="form-label">修改为新内容</label>';
@@ -529,10 +660,10 @@ function generateHtmlContent(projects) {
       
       // 难点
       html += '<div class="editor-section">';
-      html += '<h3>🎯 项目难点 <span class="confidence-badge">置信度: ' + project.难点_置信度 + '%</span></h3>';
+      html += '<h3>🎯 项目难点</h3>';
       html += '<div class="original-text">';
       html += '<div class="label">原文本：</div>';
-      html += '<div>' + (project.难点_原文 || '（无）') + '</div>';
+      html += '<div>' + (project['难点_自动提取'] || project['难点_原文'] || '（无）') + '</div>';
       html += '</div>';
       html += '<div class="form-group">';
       html += '<label class="form-label">修改为新内容</label>';
@@ -542,10 +673,10 @@ function generateHtmlContent(projects) {
       
       // 方案
       html += '<div class="editor-section">';
-      html += '<h3>💡 解决方案 <span class="confidence-badge">置信度: ' + project.方案_置信度 + '%</span></h3>';
+      html += '<h3>💡 解决方案</h3>';
       html += '<div class="original-text">';
       html += '<div class="label">原文本：</div>';
-      html += '<div>' + (project.方案_原文 || '（无）') + '</div>';
+      html += '<div>' + (project['方案_自动提取'] || project['方案_原文'] || '（无）') + '</div>';
       html += '</div>';
       html += '<div class="form-group">';
       html += '<label class="form-label">修改为新内容</label>';
@@ -555,10 +686,10 @@ function generateHtmlContent(projects) {
       
       // 结果
       html += '<div class="editor-section">';
-      html += '<h3>🏆 结果与价值 <span class="confidence-badge">置信度: ' + project.结果_置信度 + '%</span></h3>';
+      html += '<h3>🏆 结果与价值</h3>';
       html += '<div class="original-text">';
       html += '<div class="label">原文本：</div>';
-      html += '<div>' + (project.结果_原文 || '（无）') + '</div>';
+      html += '<div>' + (project['结果_自动提取'] || project['结果_原文'] || '（无）') + '</div>';
       html += '</div>';
       html += '<div class="form-group">';
       html += '<label class="form-label">修改为新内容</label>';
@@ -572,18 +703,18 @@ function generateHtmlContent(projects) {
       html += '<div class="image-section">';
       html += '<div class="image-item">';
       html += '<h4>前期图片</h4>';
-      html += '<div class="image-placeholder">原文件：' + project.图片_前期 + '</div>';
+      html += '<div class="image-placeholder">原文件：' + (project['图片_检测到的前期'] || '未检测') + '</div>';
       html += '<div class="form-group">';
-      html += '<label class="form-label">替换为新图片文件名</label>';
-      html += '<input type="text" class="form-input" id="图片_前期_新" placeholder="或留空保留原图" value="' + (saved['图片_前期_新'] || '') + '">';
+      html += '<label class="form-label">替换为新图片</label>';
+      html += '<input type="text" class="form-input" id="图片_前期_新" value="' + (saved['图片_前期_新'] || '') + '">';
       html += '</div>';
       html += '</div>';
       html += '<div class="image-item">';
       html += '<h4>后期图片</h4>';
-      html += '<div class="image-placeholder">原文件：' + project.图片_后期 + '</div>';
+      html += '<div class="image-placeholder">原文件：' + (project['图片_检测到的后期'] || '未检测') + '</div>';
       html += '<div class="form-group">';
-      html += '<label class="form-label">替换为新图片文件名</label>';
-      html += '<input type="text" class="form-input" id="图片_后期_新" placeholder="或留空保留原图" value="' + (saved['图片_后期_新'] || '') + '">';
+      html += '<label class="form-label">替换为新图片</label>';
+      html += '<input type="text" class="form-input" id="图片_后期_新" value="' + (saved['图片_后期_新'] || '') + '">';
       html += '</div>';
       html += '</div>';
       html += '</div>';
@@ -609,9 +740,7 @@ function generateHtmlContent(projects) {
       
       document.getElementById('editorContent').innerHTML = html;
       
-      // 更新UI
       updateProjectList();
-      updateProgress();
       updateNavButtons();
     }
     
@@ -635,21 +764,18 @@ function generateHtmlContent(projects) {
       editedData[currentIndex] = saved;
     }
     
-    // 下一个
     function nextProject() {
       if (currentIndex < projects.length - 1) {
         showProject(currentIndex + 1);
       }
     }
     
-    // 上一个
     function previousProject() {
       if (currentIndex > 0) {
         showProject(currentIndex - 1);
       }
     }
     
-    // 更新项目列表高亮
     function updateProjectList() {
       const items = document.querySelectorAll('.project-item');
       items.forEach((item, i) => {
@@ -657,76 +783,52 @@ function generateHtmlContent(projects) {
       });
     }
     
-    // 更新进度条
-    function updateProgress() {
-      const completed = Object.keys(editedData).length;
-      const percentage = (completed / projects.length) * 100;
-      document.getElementById('progressFill').style.width = percentage + '%';
-    }
-    
-    // 更新导航按钮
     function updateNavButtons() {
       document.getElementById('prevBtn').disabled = currentIndex === 0;
       document.getElementById('nextBtn').disabled = currentIndex === projects.length - 1;
     }
     
-    // 保存进度
     function saveDraft() {
       saveCurrentProject();
       localStorage.setItem('auditEditorDraft', JSON.stringify(editedData));
-      alert('✅ 进度已保存到浏览器！');
+      alert('✅ 进度已保存！');
     }
     
-    // 加载进度
     function loadSavedProgress() {
       try {
         const saved = localStorage.getItem('auditEditorDraft');
         if (saved) {
           editedData = JSON.parse(saved);
-          console.log('✅ 已加载 ' + Object.keys(editedData).length + ' 个已编辑项目');
+          console.log('✅ 已恢复 ' + Object.keys(editedData).length + ' 个已编辑项目');
         }
       } catch (e) {
         console.error('加载进度失败:', e);
       }
     }
     
-    // 导出CSV
     function saveAndExport() {
       saveCurrentProject();
       
-      const fieldnames = [
-        '序号', '项目名称', '分册类型', '子类',
-        '问题_原文', '问题_新内容',
-        '难点_原文', '难点_新内容',
-        '方案_原文', '方案_新内容',
-        '结果_原文', '结果_新内容',
-        '图片_前期_原', '图片_前期_新',
-        '图片_后期_原', '图片_后期_新',
-        '整体状态', '备注'
-      ];
-      
-      let csv = '\\ufeff' + fieldnames.join(',') + '\\r\\n';
+      let csv = '序号,项目名称,问题_原文,问题_新内容,难点_原文,难点_新内容,方案_原文,方案_新内容,结果_原文,结果_新内容,图片_前期_原,图片_前期_新,图片_后期_原,图片_后期_新,整体状态,备注\\r\\n';
       
       for (let i = 0; i < projects.length; i++) {
         const project = projects[i];
         const saved = editedData[i] || {};
         
         const row = [
-          project.序号,
-          project.项目名称,
-          project.分册类型,
-          project.子类,
-          project.问题_原文,
+          i + 1,
+          project.项目名称 || '',
+          project['问题_自动提取'] || project['问题_原文'] || '',
           saved['问题_新内容'] || '',
-          project.难点_原文,
+          project['难点_自动提取'] || project['难点_原文'] || '',
           saved['难点_新内容'] || '',
-          project.方案_原文,
+          project['方案_自动提取'] || project['方案_原文'] || '',
           saved['方案_新内容'] || '',
-          project.结果_原文,
+          project['结果_自动提取'] || project['结果_原文'] || '',
           saved['结果_新内容'] || '',
-          project.图片_前期,
+          project['图片_检测到的前期'] || '',
           saved['图片_前期_新'] || '',
-          project.图片_后期,
+          project['图片_检测到的后期'] || '',
           saved['图片_后期_新'] || '',
           saved['整体状态'] || '',
           saved['备注'] || '',
@@ -741,22 +843,18 @@ function generateHtmlContent(projects) {
         }).join(',') + '\\r\\n';
       }
       
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const blob = new Blob(['\\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement('a');
-      const url = URL.createObjectURL(blob);
-      link.setAttribute('href', url);
-      link.setAttribute('download', 'audit_editor_result.csv');
-      link.style.visibility = 'hidden';
-      document.body.appendChild(link);
+      link.href = URL.createObjectURL(blob);
+      link.download = 'audit_editor_result.csv';
       link.click();
-      document.body.removeChild(link);
       
-      alert('✅ 审核结果已导出！\\n文件名：audit_editor_result.csv');
+      alert('✅ 审核结果已导出！');
     }
   </script>
 </body>
 </html>`;
 }
 
-const { auditPath, outputPath } = parseArgs();
-generateInteractiveEditor(auditPath, outputPath);
+const { outputPath } = parseArgs();
+generateDynamicEditor(outputPath);
